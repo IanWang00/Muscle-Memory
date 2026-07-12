@@ -1302,6 +1302,7 @@ var GYM_STEPS={
 var deleted=JSON.parse(localStorage.getItem('sw_del')||'{}');
 var logs=JSON.parse(localStorage.getItem('sw_log')||'{}');
 var extra=JSON.parse(localStorage.getItem('sw_ex')||'{}');
+var addcardio=JSON.parse(localStorage.getItem('sw_addcardio')||'{}');
 var wDates=[],dOrder=['mon','tue','wed','thu','fri','sat','sun'];
 var cur=0,swapA=null,addKey=null,_lpTimer=null,obGsel='fat',obSexSel='m',_pendingPR=null,_lastCIKey=null,_tabsScrolled=false;
 function obSex(el){var all=document.querySelectorAll('.ob-gender');for(var i=0;i<all.length;i++)all[i].classList.remove('sel');el.classList.add('sel');obSexSel=el.getAttribute('data-sex');updateBFLabels();if(typeof obPrev==='function')obPrev();}
@@ -2070,6 +2071,7 @@ function buildRestDay(dayIdx,n){
   h+=filtered.map(function(e){return exCard(e,dk,true,recIds,dateStr);}).join('');
   h+=exs.map(function(e){return exCard(e,dk,true,recIds,dateStr);}).join('');
   h+='<button class="add-ex-btn" onclick="openAdd(\''+dk+'\')">＋ 添加动作（想动一动？）</button>';
+  h+=_cardioAppendHtml(ymd(wDates[dayIdx]),dOrder[dayIdx],n,seed);
   h+=buildMealCard(n,false,seed+1);
   return h;
 }
@@ -2491,6 +2493,7 @@ function buildGym(key,n,seed){
   }
   h+=(extra[key]||[]).map(function(e){return e.isGym?gymCard(e.id,key,dateKey,g,w):exCard(e,key,true,recIds,dateKey);}).join('');
   h+='<button class="add-ex-btn" onclick="openAdd(\''+key+'\')">＋ 添加动作</button>';
+  h+=_cardioAppendHtml(dateKey,key,n,seed);
   h+=buildMealCard(n,true,seed);
   return h;
 }
@@ -2629,6 +2632,7 @@ function buildStr(key,n,seed){
   h+=(extra[key]||[]).map(function(e){return exCard(e,key,true,recIds,dateKey);}).join('');
   h+='<button class="add-ex-btn" onclick="openAdd(\''+key+'\')">＋ 添加动作</button>';
   if(stretch.length){h+='<div style="font-size:11px;letter-spacing:1px;color:var(--st);margin:8px 0 6px">🧘 训练后拉伸</div>';h+=stretch.map(function(e){return exCard(e,key,true,recIds,dateKey);}).join('');}
+  h+=_cardioAppendHtml(dateKey,key,n,seed);
   h+=buildMealCard(n,true,seed);
   return h;
 }
@@ -2667,7 +2671,7 @@ function getCardioRec(type,goal,pref){
   }
   return {tag:tag,items:items,note:note,tgtKm:tgtKm,tgtMin:tgtMin,tgtRounds:tgtRounds};
 }
-function buildCardio(key,n,seed){
+function buildCardio(key,n,seed,compact){
   var recIds=getRecIds(cfg.g||'fat');
   var ki=KEYS.indexOf(key);if(ki<0)ki=0;
   var dateKey=ymd(wDates[ki]);
@@ -2836,6 +2840,8 @@ function buildCardio(key,n,seed){
     h+='</div>';
   }
   h+='</div>';
+
+  if(compact)return h;
 
   // Warmup section
   var wu=(warmups[savedType]||[]).filter(function(e){return!isDeleted(dk,e.id);});
@@ -3029,12 +3035,15 @@ function openAdd(dk){
   var descMap={'自重训练':'徒手训练','举铁训练':'器械增肌','有氧运动':'心肺燃脂','拉伸放松':'柔韧恢复'};
   var h='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:4px 0">';
   for(var si=0;si<LIB_STRUCTURE.length;si++){
-    var s=LIB_STRUCTURE[si];if(s.section==='有氧运动')continue;var bg=bgMap[s.section]||'#1a1a18';
+    var s=LIB_STRUCTURE[si];var bg=bgMap[s.section]||'#1a1a18';
     var cnt=0;for(var cj=0;cj<s.cats.length;cj++)cnt+=s.cats[cj].ids.length;
-    h+='<div onclick="addOpenSec('+si+')" style="background:'+bg+';border-radius:16px;padding:18px 14px;cursor:pointer;min-height:96px;display:flex;flex-direction:column;justify-content:space-between">'
+    var _isCardioSec=(s.section==='有氧运动');
+    var _clk=_isCardioSec?'addCardioPick()':'addOpenSec('+si+')';
+    var _sub=_isCardioSec?'心肺燃脂 · 记距离/时间':((descMap[s.section]||'')+' · '+cnt+'个');
+    h+='<div onclick="'+_clk+'" style="background:'+bg+';border-radius:16px;padding:18px 14px;cursor:pointer;min-height:96px;display:flex;flex-direction:column;justify-content:space-between">'
       +'<div style="font-size:30px">'+s.icon+'</div>'
       +'<div><div style="color:#fff;font-size:15px;font-weight:800">'+s.section+'</div>'
-      +'<div style="color:rgba(255,255,255,.55);font-size:10px;margin-top:2px">'+(descMap[s.section]||'')+' · '+cnt+'个</div></div></div>';
+      +'<div style="color:rgba(255,255,255,.55);font-size:10px;margin-top:2px">'+_sub+'</div></div></div>';
   }
   h+='</div>';
   document.getElementById('m-add-b').innerHTML=h;
@@ -3106,6 +3115,38 @@ function addEx(id){
   if(!extra[addKey])extra[addKey]=[];
   extra[addKey].push(e);localStorage.setItem('sw_ex',JSON.stringify(extra));
   cm('m-add');renderDay(cur);toast('已添加：'+e.nm);
+}
+
+// 附加有氧到某天(统一解析成日期存储)
+function _resolveDateKey(k){if(!k)return todayKey();k=(''+k).replace('rest_','');if(k.indexOf('-')>=0)return k;var ki=dOrder.indexOf(k);return ki>=0?ymd(wDates[ki]):todayKey();}
+function _cardioAppendHtml(dateKey,key,n,seed){
+  if(typeof addcardio==='undefined'||!addcardio[dateKey])return '';
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin:16px 2px 6px">'
+    +'<div style="font-size:12px;letter-spacing:1px;color:var(--st);font-weight:800">➕ 附加有氧</div>'
+    +'<div onclick="removeCardioFromDay(\''+dateKey+'\')" style="font-size:12px;color:var(--mu);cursor:pointer">移除</div></div>'
+    +buildCardio(key,n,seed,true);
+}
+function addCardioPick(){
+  var types=[{id:'running',icon:'🏃',nm:'跑步',color:'#c0390a'},{id:'cycling',icon:'🚴',nm:'骑行',color:'#1a6ab0'},{id:'swimming',icon:'🏊',nm:'游泳',color:'#0a7a8a'},{id:'jump-rope',icon:'🪢',nm:'跳绳',color:'#7a3ab0'}];
+  var h='<div onclick="openAdd(addKey)" style="display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--st);cursor:pointer;margin-bottom:12px">‹ 返回分类</div>';
+  h+='<div style="font-size:15px;font-weight:800;margin-bottom:12px">❤️ 选择有氧类型</div>';
+  for(var i=0;i<types.length;i++){var t=types[i];
+    h+='<div onclick="addCardioToDay(\''+t.id+'\')" style="background:linear-gradient(135deg,'+t.color+','+t.color+'cc);border-radius:14px;padding:16px;margin-bottom:10px;display:flex;align-items:center;gap:12px;cursor:pointer;color:#fff">'
+      +'<div style="font-size:28px">'+t.icon+'</div>'
+      +'<div style="font-size:16px;font-weight:800">'+t.nm+'</div></div>';
+  }
+  document.getElementById('m-add-b').innerHTML=h;
+}
+function addCardioToDay(ctype){
+  ctype=ctype||'running';
+  var dk=_resolveDateKey(addKey);
+  addcardio[dk]=ctype;localStorage.setItem('sw_addcardio',JSON.stringify(addcardio));
+  if(!logs[dk])logs[dk]={};logs[dk].cardio_type=ctype;localStorage.setItem('sw_log',JSON.stringify(logs));
+  cm('m-add');renderDay(cur);toast('已添加有氧：'+({running:'跑步',cycling:'骑行',swimming:'游泳','jump-rope':'跳绳'}[ctype]||''));
+}
+function removeCardioFromDay(dk){
+  if(addcardio[dk]){delete addcardio[dk];localStorage.setItem('sw_addcardio',JSON.stringify(addcardio));}
+  renderDay(cur);toast('已移除有氧');
 }
 
 // LIBRARY
